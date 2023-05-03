@@ -1,4 +1,5 @@
 import random
+import numpy as np
 
 class VM:
 
@@ -31,26 +32,27 @@ class VM:
         # 16-bit index register
         self.index = 0x00
 
-        # 64 byte stack (here for simplicity we make it a list to use .append() and .pop())
-        self.stack = [] # TODO maybe use numpy + acutal stack pointer
+        # 16 x 16 bit value stack
+        self.stack = np.zeros(16, dtype='uint16') # TODO maybe use numpy + acutal stack pointer
 
         # 8-bit stack pointer
         self.sp = 0b0
 
         # 8-bit delay timer
-        self.delay_timer = 0b0 #TODO implement / expose way to tick
+        self.delay_timer = 0b0
 
         # 8-bit sound timer
-        self.sound_timer = 0b0 #TODO implement / expose way to tick + make sound
+        self.sound_timer = 0b0 #TODO need to actually make sound
 
         # 64x32 bit frame buffer (each representing monochrome pixel)
         # All setting of pixels are done through use of sprites that
         # are always 8xn where n is the pixel height of each sprite
-        self.frame_buffer = [[0b0] * 64 for i in range(32)] # TODO maybe use numpy? 
+        # self.frame_buffer = [[0b0] * 64 for i in range(32)] # TODO maybe use numpy? 
+        self.frame_buffer = np.zeros((32, 64), dtype='uint8')
 
         # 4096 bytes of addressable memory
         # program/data space will live between 0x200 - 0xFFF
-        self.memory = [0x00] * 4096
+        self.memory = np.zeros(4096, dtype='uint8')
 
         # 0x0 - 0x080 reserved for Font Set
         # font set allows for 0-9 and A-F to be printed
@@ -127,9 +129,10 @@ class VM:
                 self.clear_frame_buffer()
                 self.pc += 2
             case ('0', '0', 'e', 'e'): # RET. pop address from stack and move pc there
-                ret_addr = self.stack.pop()
-                self.pc = ret_addr
+                ret_addr = self.stack[self.sp]
                 self.sp -= 1 
+                self.pc = ret_addr
+                self.pc += 2 # TODO I think this fixed it????
             case ('0', _, _, _): # SYS addr. 0nnn jump to machine code routine at nnn
                 print('not impl')
                 self.pc += 2
@@ -137,8 +140,8 @@ class VM:
                 new_addr = '0x' + low_high + high_low + high_high
                 self.pc = int(new_addr, 16)
             case ('2', _, _, _): # CALL addr. subroutine call, push current pc to stack, set PC to NNN
-                self.stack.append(self.pc)
                 self.sp += 1
+                self.stack[self.sp] = self.pc
                 new_addr = '0x' + low_high + high_low + high_high
                 self.pc = int(new_addr, 16)
             case ('3', _, _, _): # SE Vx, byte. 3xkk Skip next instruction if vx = kk
@@ -217,12 +220,8 @@ class VM:
                 self.pc += 2
             case ('8', _, _, 'e'): # SHL Vx {, Vy} 8xye set vx = vx SHL 1, set VF = MSB of vx
                 vx = self.registers[f'v{low_high}']
-                msb_set = (vx & 0b10000000) == 0b10000000
-                if msb_set:
-                    self.registers['vf'] = 1
-                else:
-                    self.registers['vf'] = 0
-                self.registers[f'v{low_high}'] = vx << 1
+                self.registers['vf'] = vx >> 7
+                self.registers[f'v{low_high}'] = (vx << 1) & 0xff
                 self.pc += 2
             case ('9', _, _, '0'): # SNE Vx, Vy. 9xy0 skip next if vx != vy
                 if self.registers[f'v{low_high}'] != self.registers[f'v{high_low}']:
@@ -299,17 +298,16 @@ class VM:
                 self.memory[self.index] = hundreds
                 self.memory[self.index + 1] = tens
                 self.memory[self.index + 2] = units
-
                 self.pc += 2
             case ('f', _, '5', '5'): # LD [I], Vx. fx55 store v0 - vx in memory starting at I
                 x = int(low_high, 16)
                 for offset in range(x + 1): #TODO should this be + 1?? I think??
-                    self.memory[self.index + offset] = self.registers[f'v{hex(x)[2:]}']
+                    self.memory[self.index + offset] = self.registers[f'v{hex(offset)[2:]}']
                 self.pc += 2
             case ('f', _, '6', '5'): # LD Vx, [I]. fx65 fill v0 - vx with values in memory starting at I
                 x = int(low_high, 16)
                 for offset in range(x + 1): # TODO should this be + 1?? I Think??
-                    self.registers[f'v{hex(x)[2:]}'] = self.memory[self.index + offset]
+                    self.registers[f'v{hex(offset)[2:]}'] = self.memory[self.index + offset]
                 self.pc += 2
             case (_, _, _, _):
                 print(f'bad instrction {low_low + low_high + high_low + high_high}')
