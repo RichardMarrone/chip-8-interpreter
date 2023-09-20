@@ -6,25 +6,9 @@ class VM:
     PROGRAM_SECTION_START = 0x200
 
     def __init__(self):
-        # 16 8-bit registers
-        self.registers = {
-            'v0': 0,
-            'v1': 0,
-            'v2': 0,
-            'v3': 0,
-            'v4': 0,
-            'v5': 0,
-            'v6': 0,
-            'v7': 0,
-            'v8': 0,
-            'v9': 0,
-            'va': 0,
-            'vb': 0,
-            'vc': 0,
-            'vd': 0,
-            've': 0,
-            'vf': 0
-        }
+
+        # 16 8-bit registers 
+        self.register_v = np.zeros(16, dtype=np.uint8)
 
         # start program counter at beginning address in memory of 0x200
         self.pc = 0x200
@@ -32,27 +16,29 @@ class VM:
         # 16-bit index register
         self.index = 0x00
 
+        # are we currently holding execution while we wait for keypress
+        self.waiting_key = False
+
         # 16 x 16 bit value stack
-        self.stack = np.zeros(16, dtype='uint16') # TODO maybe use numpy + acutal stack pointer
+        self.stack = np.zeros(16, dtype=np.uint16) 
 
         # 8-bit stack pointer
-        self.sp = 0b0
+        self.sp = 0
 
         # 8-bit delay timer
-        self.delay_timer = 0b0
+        self.delay_timer = 0
 
         # 8-bit sound timer
-        self.sound_timer = 0b0 #TODO need to actually make sound
+        self.sound_timer = 0 #TODO need to actually make sound
 
         # 64x32 bit frame buffer (each representing monochrome pixel)
         # All setting of pixels are done through use of sprites that
         # are always 8xn where n is the pixel height of each sprite
-        # self.frame_buffer = [[0b0] * 64 for i in range(32)] # TODO maybe use numpy? 
-        self.frame_buffer = np.zeros((32, 64), dtype='uint8')
+        self.frame_buffer = np.zeros((32, 64), dtype=np.uint8)
 
         # 4096 bytes of addressable memory
         # program/data space will live between 0x200 - 0xFFF
-        self.memory = np.zeros(4096, dtype='uint8')
+        self.memory = np.zeros(4096, dtype=np.uint8)
 
         # 0x0 - 0x080 reserved for Font Set
         # font set allows for 0-9 and A-F to be printed
@@ -113,7 +99,7 @@ class VM:
                 self.memory[self.PROGRAM_SECTION_START + offset] = int(byte.hex(), 16)
                 offset += 1
 
-    def step(self, keyboard):
+    def step(self, keyboard, keyboard_signal):
         low = self.memory[self.pc]
         high = self.memory[self.pc + 1]
         low_low = hex((low >> 4) & 0xf)[2:]
@@ -132,7 +118,7 @@ class VM:
                 ret_addr = self.stack[self.sp]
                 self.sp -= 1 
                 self.pc = ret_addr
-                self.pc += 2 # TODO I think this fixed it????
+                self.pc += 2
             case ('0', _, _, _): # SYS addr. 0nnn jump to machine code routine at nnn
                 print('not impl')
                 self.pc += 2
@@ -146,85 +132,85 @@ class VM:
                 self.pc = int(new_addr, 16)
             case ('3', _, _, _): # SE Vx, byte. 3xkk Skip next instruction if vx = kk
                 val = high
-                if self.registers[f'v{low_high}'] == val:
+                if self.register_v[int(low_high, 16)] == val:
                     self.pc += 2 # perform actual skip
                 self.pc += 2
             case ('4', _, _, _): # SNE Vx, byte. 4xkk Skip next instruction if vx != kk
                 val = high
-                if self.registers[f'v{low_high}'] != val:
+                if self.register_v[int(low_high, 16)] != val:
                     self.pc += 2 # perform actual skip
                 self.pc += 2
             case ('5', _, _, '0'): # SE Vx, Vy. 5xy0 Skip next instruction if vx = vy
-                if self.registers[f'v{low_high}'] == self.registers[f'v{high_low}']:
+                if self.register_v[int(low_high, 16)] == self.register_v[int(high_low, 16)]:
                     self.pc += 2 # perform actual skip
                 self.pc += 2
             case ('6', _, _, _): # LD Vx, byte. 6xkk set vx = kk
-                self.registers[f'v{low_high}'] = high
+                self.register_v[int(low_high, 16)] = high
                 self.pc += 2
             case ('7', _, _, _): # ADD Vx, byte. 7xkk set vx = vx + kk
-                vx = self.registers[f'v{low_high}']
-                self.registers[f'v{low_high}'] = (vx + high) & 0xFF
+                vx = self.register_v[int(low_high, 16)]
+                self.register_v[int(low_high, 16)] = (vx + high) & 0xFF
                 self.pc += 2
             case ('8', _, _, '0'): # LD Vx, Vy. 8xy0 set vx = vy
-                self.registers[f'v{low_high}'] = self.registers[f'v{high_low}']
+                self.register_v[int(low_high, 16)] = self.register_v[int(high_low, 16)]
                 self.pc += 2
             case ('8', _, _, '1'): # OR Vx, Vy. 8xy1 set vx = vx OR vy
-                vx = self.registers[f'v{low_high}']
-                vy = self.registers[f'v{high_low}']
-                self.registers[f'v{low_high}'] = vx | vy
+                vx = self.register_v[int(low_high, 16)]
+                vy = self.register_v[int(high_low, 16)]
+                self.register_v[int(low_high, 16)] = vx | vy
                 self.pc += 2
             case ('8', _, _, '2'): # AND Vx, Vy. 8xy2 set vx = vx AND vy
-                vx = self.registers[f'v{low_high}']
-                vy = self.registers[f'v{high_low}']
-                self.registers[f'v{low_high}'] = vx & vy
+                vx = self.register_v[int(low_high, 16)]
+                vy = self.register_v[int(high_low, 16)]
+                self.register_v[int(low_high, 16)] = vx & vy
                 self.pc += 2
             case ('8', _, _, '3'): # XOR Vx, Vy. 8xy3 set vx = vx XOR vy
-                vx = self.registers[f'v{low_high}']
-                vy = self.registers[f'v{high_low}']
-                self.registers[f'v{low_high}'] = vx ^ vy
+                vx = self.register_v[int(low_high, 16)]
+                vy = self.register_v[int(high_low, 16)]
+                self.register_v[int(low_high, 16)] = vx ^ vy
                 self.pc += 2
             case ('8', _, _, '4'): # ADD Vx, Vy. 8xy4 set vx = vx + vy, set vf = carry
-                vx = self.registers[f'v{low_high}']
-                vy = self.registers[f'v{high_low}']
-                n = vx + vy
+                vx = self.register_v[int(low_high, 16)]
+                vy = self.register_v[int(high_low, 16)]
+                n = vx + vy # TODO numpy is somehow getting into registers with its 8 bit values and causing overflow. Need to ensure register writes are python ints
                 if (n > 255): # set carry flag (confirm the reset to 0 here)
-                    self.registers['vf'] = 1
+                    self.register_v[15] = 1
                 else:
-                    self.registers['vf'] = 0
-                self.registers[f'v{low_high}'] = n & 0xff # lowest 8 bits
+                    self.register_v[15] = 0
+                self.register_v[int(low_high, 16)] = n & 0xff # lowest 8 bits
                 self.pc += 2
             case ('8', _, _, '5'): # SUB Vx, Vy. 8xy5 set vx = vx - vy, set VF = NOT borrow
-                vx = self.registers[f'v{low_high}']
-                vy = self.registers[f'v{high_low}']
+                vx = self.register_v[int(low_high, 16)]
+                vy = self.register_v[int(high_low, 16)]
                 if vx > vy:
-                    self.registers['vf'] = 1
+                    self.register_v[15] = 1
                 else:
-                    self.registers['vf'] = 0
-                self.registers[f'v{low_high}'] = vx - vy
+                    self.register_v[15] = 0
+                self.register_v[int(low_high, 16)] = vx - vy
                 self.pc += 2
             case ('8', _, _, '6'): # SHR Vx {, vy} 8xy6 set vx = vx SHR 1, set VF = LSB of vx
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
 
-                self.registers['vf'] = vx & 1
+                self.register_v[15] = vx & 1
                 
-                self.registers[f'v{low_high}'] = vx >> 1
+                self.register_v[int(low_high, 16)] = vx >> 1
                 self.pc += 2
             case ('8', _, _, '7'): # SUBN Vx, Vy. 8xy7 set vx = vy - vx, set VF = NOT borrow
-                vx = self.registers[f'v{low_high}']
-                vy = self.registers[f'v{high_low}']
+                vx = self.register_v[int(low_high, 16)]
+                vy = self.register_v[int(high_low, 16)]
                 if vy > vx:
-                    self.registers['vf'] = 1
+                    self.register_v[15] = 1
                 else:
-                    self.registers['vf'] = 0
-                self.registers[f'v{low_high}'] = vy - vx
+                    self.register_v[15] = 0
+                self.register_v[int(low_high, 16)] = vy - vx
                 self.pc += 2
             case ('8', _, _, 'e'): # SHL Vx {, Vy} 8xye set vx = vx SHL 1, set VF = MSB of vx
-                vx = self.registers[f'v{low_high}']
-                self.registers['vf'] = vx >> 7
-                self.registers[f'v{low_high}'] = (vx << 1) & 0xff
+                vx = self.register_v[int(low_high, 16)]
+                self.register_v[15] = vx >> 7
+                self.register_v[int(low_high, 16)] = (vx << 1) & 0xff
                 self.pc += 2
             case ('9', _, _, '0'): # SNE Vx, Vy. 9xy0 skip next if vx != vy
-                if self.registers[f'v{low_high}'] != self.registers[f'v{high_low}']:
+                if self.register_v[int(low_high, 16)] != self.register_v[int(high_low, 16)]:
                     self.pc += 2 # perform actual skip
                 self.pc += 2
             case ('a', _, _, _): # LD I, addr. Annn set I = nnn
@@ -233,15 +219,15 @@ class VM:
                 self.pc += 2
             case ('b', _, _, _): # JP v0, addr. Jump to location nnn + addr
                 addr = '0x' + low_high + high_low + high_high
-                new_addr = int(addr, 16) + self.registers['v0']
+                new_addr = int(addr, 16) + self.register_v[0]
                 self.pc = new_addr
             case ('c', _, _, _): # RND Vx, byte. Cxkk Set Vx = random byte & kk
                 kk = '0x' + high_low + high_high
-                self.registers[f'v{low_high}'] = random.randint(0,255) & int(kk, 16)
+                self.register_v[int(low_high, 16)] = random.randint(0,255) & int(kk, 16)
                 self.pc += 2
             case ('d', _, _, _): # DRW Vx, Vy, nibble. Dxyn Display n-byte sprite starting at memory location I to (Vx, Vy). Set VF = collision
-                vx = self.registers[f'v{low_high}'] & 0x3f # mod 64 for wrap
-                vy = self.registers[f'v{high_low}'] & 0x1f # mod 32 for wrap
+                vx = self.register_v[int(low_high, 16)] & 0x3f # mod 64 for wrap
+                vy = self.register_v[int(high_low, 16)] & 0x1f # mod 32 for wrap
                 n = int('0x' + high_high, 16)
                 
                 # sprites that are always 8 × N where N is the pixel height of the sprite
@@ -252,46 +238,49 @@ class VM:
                         frame_bit = self.frame_buffer[(vy + offset) & 0x1f][(vx + bit_index) & 0x3f] # TODO sometimes IndexError: list index out of range
                         bit_list_bit = bit_list[bit_index]
                         if frame_bit == 1 and bit_list_bit == 1:
-                            self.registers['vf'] = 1
+                            self.register_v[15] = 1
                         self.frame_buffer[(vy + offset) & 0x1f][(vx + bit_index) & 0x3f] ^= bit_list_bit
                 self.pc += 2
             case ('e', _, '9', 'e'): # SKP Vx. ex9e skip next instr if key with value vx is pressed
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
                 if (keyboard[vx] == 1):
                     self.pc += 2
                 self.pc += 2
             case ('e', _, 'a', '1'): # SKNP Vx. exa1 skip next instr if key with value vx is not pressed
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
                 if (keyboard[vx] == 0):
                     self.pc += 2
                 self.pc += 2
             case ('f', _, '0', '7'): #LD Vx, DT fx07. set vx = delay timer 
-                self.registers[f'v{low_high}'] = self.delay_timer
+                self.register_v[int(low_high, 16)] = self.delay_timer
                 self.pc += 2
             case ('f', _, '0', 'a'): #LD Vx, K. fx0a wait for key, store value of key in vx
-                # TODO pause execution while waiting for key, then read and process
-                self.pc += 2
+                if (self.waiting_key and keyboard_signal): # we were waiting but we've just recv'd signal
+                    self.register_v[int(low_high, 16)] = keyboard.index(1) # TODO may be buggy because we are only looking for 1 key press at a time. If multiple held, this fails
+                    self.pc += 2
+                # otherwise wait for key press   
+                self.waiting_key = True
             case ('f', _, '1', '5'): # LD DT, Vx. fx15 Set delay timer = vx
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
                 self.delay_timer = vx
                 self.pc += 2
             case ('f', _, '1', '8'): # LD ST, Vx. fx18 Set sound timer = vx
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
                 self.sound_timer = vx
                 self.pc += 2
             case ('f', _, '1', 'e'): # ADD I, Vx. fx1e set I = I + Vx
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
                 self.index += vx
                 self.pc += 2
             case ('f', _, '2', '9'): # LD F, Vx. fx29 Set I = location of sprite for digit Vx (from font)
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
                 self.index = vx * 5
                 self.pc += 2
             case ('f', _, '3', '3'): # LD B, Vx. fx33 Store BCD representation of Vx in memory locations I, I+1, I+2
                 # The interpreter takes the decimal
                 # value of Vx, and places the hundreds digit in memory at location in I, the tens digit at location I+1, and
                 # the ones digit at location I+2.
-                vx = self.registers[f'v{low_high}']
+                vx = self.register_v[int(low_high, 16)]
                 hundreds = (vx % 1000) // 100
                 tens = (vx % 100) // 10
                 units = (vx % 10)
@@ -302,19 +291,13 @@ class VM:
             case ('f', _, '5', '5'): # LD [I], Vx. fx55 store v0 - vx in memory starting at I
                 x = int(low_high, 16)
                 for offset in range(x + 1): #TODO should this be + 1?? I think??
-                    self.memory[self.index + offset] = self.registers[f'v{hex(offset)[2:]}']
+                    self.memory[self.index + offset] = self.register_v[offset]
                 self.pc += 2
             case ('f', _, '6', '5'): # LD Vx, [I]. fx65 fill v0 - vx with values in memory starting at I
                 x = int(low_high, 16)
                 for offset in range(x + 1): # TODO should this be + 1?? I Think??
-                    self.registers[f'v{hex(offset)[2:]}'] = self.memory[self.index + offset]
+                    self.register_v[offset] = self.memory[self.index + offset]
                 self.pc += 2
             case (_, _, _, _):
                 print(f'bad instrction {low_low + low_high + high_low + high_high}')
                 return
-# vm = VM()
-# vm.load_program('roms\maze.ch8')
-# keyboard = [0] * 0xf #0x0 - #0xF
-# while True:
-#     vm.step(keyboard)
-#     vm.debug_render_frame_buffer()
